@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URL Shortener</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; line-height: 1.6; }
+        .section { margin-bottom: 30px; border: 1px solid #ddd; padding: 15px; border-radius: 8px; }
+        input { width: 70%; padding: 8px; }
+        button { padding: 8px 15px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px; }
+        button:hover { background: #0056b3; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #eee; padding: 10px; text-align: left; }
+        th { background: #f8f8f8; }
+        .short-url { color: #007bff; font-weight: bold; text-decoration: none; }
+    </style>
+</head>
+<body>
+
+    <h2>Сокращатель ссылок</h2>
+
+    <div class="section">
+        <h3>1. Создать короткую ссылку</h3>
+        <input type="text" id="urlInput" placeholder="Введите длинный URL (например, https://google.com)">
+        <button onclick="createUrl()">Создать</button>
+    </div>
+
+    <div class="section">
+        <h3>2. Все ссылки <button onclick="getAllUrls()" style="font-size: 12px;">Обновить список</button></h3>
+        <table id="urlTable">
+            <thead>
+                <tr>
+                    <th>Оригинал</th>
+                    <th>Короткая (редирект)</th>
+                </tr>
+            </thead>
+            <tbody id="urlList">
+                </tbody>
+        </table>
+    </div>
+
+    <script>
+        const API_BASE = 'http://api.yaharuott.ru'; 
+
+        // 1. POST api/create
+        async function createUrl() {
+            const urlValue = document.getElementById('urlInput').value;
+            if (!urlValue) return alert('Введите URL');
+
+            try {
+                const response = await fetch(`${API_BASE}/api/create`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: urlValue })
+                });
+                
+                if (response.ok) {
+                    alert('Успешно создано!');
+                    document.getElementById('urlInput').value = '';
+                    getAllUrls(); 
+                }
+            } catch (err) {
+                console.error('Ошибка при создании:', err);
+            }
+        }
+
+        // 2. GET api/getallurl
+        async function getAllUrls() {
+            try {
+                const response = await fetch(`${API_BASE}/api/getallurl`);
+                const data = await response.json(); 
+                
+                const list = document.getElementById('urlList');
+                list.innerHTML = '';
+
+                data.forEach(item => {
+                    const row = `
+                        <tr>
+                            <td><small>${item.OriginalURL}</small></td>
+                            <td>
+                                <a href="${API_BASE}/${item.ShortURL}" target="_blank" class="short-url">
+                                    /${item.ShortURL}
+                                </a>
+                            </td>
+                        </tr>
+                    `;
+                    list.innerHTML += row;
+                });
+            } catch (err) {
+                console.error('Ошибка при получении списка:', err);
+            }
+        }
+
+        window.onload = getAllUrls;
+    </script>
+</body>
+</html>

@@ -1,0 +1,575 @@
+package main
+
+import "urlshortener/internal/app"
+
+func main(){
+	app.StartApp()
+}
+package app
+
+import (
+	"os"
+	"urlshortener/internal/config"
+	"urlshortener/internal/db"
+	"urlshortener/internal/handlers"
+	"urlshortener/internal/repo"
+	"urlshortener/internal/service"
+
+	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
+)
+
+
+
+func StartApp(){
+	godotenv.Load()
+
+
+	config := config.LoadConfig()
+	db:=db.InitDB(config.DatabaseConfig.DSN())
+	repo:=repo.NewLinkRepository(db.DB)
+	service:=service.NewLinkService(repo)
+	handlers:=handlers.NewLinkHandlers(service)
+	
+	
+	
+	r:=gin.Default()
+	api:=r.Group("api")
+	//Ручка создания ссылки
+	api.POST("/create",func(c *gin.Context){
+		handlers.CreateLink(c)
+	})
+	//Ручка получения всех ссылок 
+	api.GET("/getallurl", func(c* gin.Context){
+		handlers.GetLinks(c)
+	})
+	//Редирект на оригинальную ссылку
+	r.GET("/:short",func(c *gin.Context){
+		handlers.RedirectFromShortURL(c)
+	})
+
+	port:=os.Getenv("SERVICE_PORT")
+	r.Run(":"+port)
+}package config
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/joho/godotenv"
+)
+
+
+type Config struct{
+	DatabaseConfig DatabaseConfig
+}
+
+type DatabaseConfig struct{
+	User string
+	Password string
+	Host string
+	Name string
+	Port string
+}
+
+func LoadConfig()*Config{
+	godotenv.Load()
+	user:=os.Getenv("DB_USER")
+	pass:=os.Getenv("DB_PASS")
+	host:=os.Getenv("DB_HOST")
+	port:=os.Getenv("DB_PORT")
+	name:=os.Getenv("DB_NAME")
+
+	return &Config{
+		DatabaseConfig: DatabaseConfig{
+			User: user,
+			Password: pass,
+			Host: host,
+			Port: port,
+			Name: name,
+		},
+	}
+}
+
+func (db *DatabaseConfig) DSN() string{
+	return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", db.User, db.Password, db.Host, db.Port, db.Name)
+}package db
+
+import (
+	"fmt"
+
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/pressly/goose/v3"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+)
+
+type DB struct{
+	*gorm.DB
+}
+
+
+// Инициализация БД
+func InitDB(dsn string) *DB{
+	
+	
+	db,err:=gorm.Open(mysql.Open(dsn),&gorm.Config{
+		Logger: logger.Default.LogMode(logger.Info),
+	} )
+
+	if err != nil{
+		panic(err)
+	}
+
+	if err := goose.SetDialect("mysql"); err != nil{
+		panic(err)
+	}
+
+
+	sqlDB,err:=db.DB()
+	if err != nil{
+		panic(err)
+	}
+	if err := goose.Up(sqlDB, "migrations"); err != nil{
+		panic(err)
+	}
+
+	if err != nil{
+		panic(err)
+	}
+
+	fmt.Println("DB has been started")
+	return &DB{db}
+}package entity
+
+
+
+type Link struct{
+	ID int
+	OriginalURL string
+	ShortURL string
+}
+
+
+func NewLink(short_url,original_url string)*Link{
+	return &Link{
+		OriginalURL: original_url,
+		ShortURL: short_url,
+	}
+}package dto
+
+
+type NewLink struct{
+	OriginalURL string `json:"url" binding:"required"`
+}
+
+type GetOriginalURL struct{
+	ShortURL string `json:"short_url" binding:"required"`
+}
+
+package handlers
+
+import (
+	"net/http"
+	"urlshortener/internal/dto"
+	"urlshortener/internal/service"
+
+	"github.com/gin-gonic/gin"
+)
+
+
+
+
+type LinkHandlers struct{
+	service service.Service
+}
+
+func NewLinkHandlers(service service.Service)*LinkHandlers{
+	return &LinkHandlers{service: service}
+}
+
+//Создание короткой ссылки из большой входящей
+func(h *LinkHandlers) CreateLink(c *gin.Context){
+	var req dto.NewLink
+	//Обработка входящей ссылки в формате JSON
+	if err := c.ShouldBindJSON(&req); err!=nil{
+		c.JSON(http.StatusBadRequest,gin.H{"error":err.Error()})
+		return
+	}
+	originalURL, shortURL, err := h.service.NewLink(c.Request.Context(),&req)
+	if err != nil{
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	// Ответ пользователю о добавлении ссылки
+	c.JSON(http.StatusOK, gin.H{"original_url":originalURL,"short_url":shortURL})
+}
+
+
+//Получение всех данных о сохраненных ссылках 
+func(h *LinkHandlers) GetLinks(c *gin.Context){
+	links,err:=h.service.GetLinks(c.Request.Context())
+	if err != nil{
+		c.JSON(http.StatusInternalServerError, gin.H{"error":err.Error()})
+		return
+	}
+	c.JSON(200,links)
+}
+
+
+func(h *LinkHandlers) RedirectFromShortURL(c *gin.Context){
+	//Поиск по какому ID искать оригинальную ссылку в БД
+	shortUrl := c.Param("short")
+	var originalURL string
+	//Поиск оригинальной ссылки по короткой ссылке
+	originalURL, err := h.service.GetLink(c.Request.Context(), shortUrl)
+	if err != nil {
+        c.JSON(http.StatusNotFound, gin.H{"error": "Link not found"})
+        return
+    }
+	originalURL = "https://" + originalURL
+	//Редирект на оригинальную ссылку
+	c.Redirect(http.StatusFound,originalURL)
+}package handlers
+
+import (
+	"net/http"
+	"urlshortener/internal/dto"
+	"urlshortener/internal/service"
+
+	"github.com/gin-gonic/gin"
+)
+
+
+
+
+type LinkHandlers struct{
+	service service.Service
+}
+
+func NewLinkHandlers(service service.Service)*LinkHandlers{
+	return &LinkHandlers{service: service}
+}
+
+//Создание короткой ссылки из большой входящей
+func(h *LinkHandlers) CreateLink(c *gin.Context){
+	var req dto.NewLink
+	//Обработка входящей ссылки в формате JSON
+	if err := c.ShouldBindJSON(&req); err!=nil{
+		c.JSON(http.StatusBadRequest,gin.H{"error":err.Error()})
+		return
+	}
+	originalURL, shortURL, err := h.service.NewLink(c.Request.Context(),&req)
+	if err != nil{
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	// Ответ пользователю о добавлении ссылки
+	c.JSON(http.StatusOK, gin.H{"original_url":originalURL,"short_url":shortURL})
+}
+
+
+//Получение всех данных о сохраненных ссылках 
+func(h *LinkHandlers) GetLinks(c *gin.Context){
+	links,err:=h.service.GetLinks(c.Request.Context())
+	if err != nil{
+		c.JSON(http.StatusInternalServerError, gin.H{"error":err.Error()})
+		return
+	}
+	c.JSON(200,links)
+}
+
+
+func(h *LinkHandlers) RedirectFromShortURL(c *gin.Context){
+	//Поиск по какому ID искать оригинальную ссылку в БД
+	shortUrl := c.Param("short")
+	var originalURL string
+	//Поиск оригинальной ссылки по короткой ссылке
+	originalURL, err := h.service.GetLink(c.Request.Context(), shortUrl)
+	if err != nil {
+        c.JSON(http.StatusNotFound, gin.H{"error": "Link not found"})
+        return
+    }
+	originalURL = "https://" + originalURL
+	//Редирект на оригинальную ссылку
+	c.Redirect(http.StatusFound,originalURL)
+}-- +goose Up
+-- +goose StatementBegin
+CREATE TABLE links(
+    ID int AUTO_INCREMENT PRIMARY KEY,
+    OriginalURL text not null,
+    ShortURL VARCHAR(255) not null UNIQUE
+);
+-- +goose StatementEnd
+
+-- +goose Down
+-- +goose StatementBegin
+DROP TABLE IF EXISTS links;
+-- +goose StatementEnd
+package repo
+
+import (
+	"context"
+	"errors"
+	"log"
+	"urlshortener/internal/domain/entity"
+
+	"gorm.io/gorm"
+)
+
+
+type Repository interface{
+	Create(ctx context.Context,link *entity.Link)error
+	Get(ctx context.Context)([]*entity.Link,error)
+	GetByShortURL(ctx context.Context, shortURL string)(*entity.Link,error)
+}
+
+type Link struct{
+	ID int `gorm:"unique;primaryKey;autoIncrement"`
+	Original_url string `gorm:"not null"`
+	Short_url string `gorm:"unique;not null"`
+}
+
+type LinkRepository struct{
+	Database *gorm.DB
+}
+
+func NewLinkRepository(db *gorm.DB) *LinkRepository{
+	return &LinkRepository{
+		Database: db,
+	}
+}
+
+
+func fromDomain(link *entity.Link)*Link{
+	return &Link{
+		Original_url: link.OriginalURL,
+		Short_url: link.ShortURL,
+	}
+}
+
+func toDomain(link *Link)*entity.Link{
+	return &entity.Link{
+		ID: link.ID,
+		OriginalURL: link.Original_url,
+		ShortURL: link.Short_url,
+	}
+}
+
+func toDomains(links []*Link)[]*entity.Link{
+	response:=make([]*entity.Link, len(links))
+	for i, link := range links{
+		response[i]=toDomain(link)
+	}
+	return response
+}
+
+
+func (r *LinkRepository) Create(ctx context.Context,link *entity.Link)error{
+	err := r.Database.WithContext(ctx).Create(fromDomain(link)).Error
+	if err != nil{
+		log.Print(err)
+		return errors.New("failed to create new link")
+	}
+	return nil
+}
+
+func (r *LinkRepository)Get(ctx context.Context)([]*entity.Link,error){
+	var links []*Link
+	err:= r.Database.WithContext(ctx).Find(&links).Error
+	if err != nil{
+		log.Print(err)
+		return nil, errors.New("failed to get links")
+	}
+	return toDomains(links),nil
+}
+
+func (r *LinkRepository)GetByShortURL(ctx context.Context, shortURL string)(*entity.Link,error){ 
+	var link Link
+	err := r.Database.WithContext(ctx).Where("short_url = ?", shortURL).First(&link).Error
+	if err != nil{
+		if errors.Is(err, gorm.ErrRecordNotFound){
+			return nil, errors.New("link not found")
+		}
+		log.Print(err)
+		return nil, errors.New("failed to get link")
+	}
+	return toDomain(&link),nil
+}package service
+
+import (
+	"context"
+	"urlshortener/internal/domain/entity"
+	"urlshortener/internal/dto"
+	"urlshortener/internal/repo"
+	"urlshortener/internal/tools"
+)
+
+type Service interface{
+	NewLink(ctx context.Context,dto *dto.NewLink)(string,string,error)
+	GetLinks(ctx context.Context)([]*entity.Link,error)
+	GetLink(ctx context.Context,shortURL string )(string,error)
+}
+
+
+type LinkService struct{
+	repo repo.Repository
+}
+
+func NewLinkService(repo repo.Repository)*LinkService{
+	return &LinkService{
+		repo: repo,
+	}
+}
+
+func (s *LinkService) NewLink(ctx context.Context,dto *dto.NewLink)(string,string,error){
+	shortUrl,err := tools.GenerateUniqueID()
+	if err != nil{
+		return "","",err
+	}
+	newLink := entity.NewLink(shortUrl,dto.OriginalURL)
+	err = s.repo.Create(ctx,newLink)
+	if err != nil{
+		return "","",err
+	}
+	return dto.OriginalURL, shortUrl, nil
+}
+
+func (s *LinkService) GetLinks(ctx context.Context)([]*entity.Link,error){
+	links,err := s.repo.Get(ctx)
+	if err!=nil{
+		return nil,err
+	}
+	return links,nil
+}
+
+func (s *LinkService) GetLink(ctx context.Context,shortURL string  )(string,error){
+	link,err := s.repo.GetByShortURL(ctx,shortURL)
+	if err!=nil{
+		return "",err
+	}
+	return link.OriginalURL,nil
+}
+
+
+package tools
+
+import (
+	"errors"
+	"log"
+	"os"
+	"strconv"
+
+	"github.com/joho/godotenv"
+	gonanoid "github.com/matoous/go-nanoid/v2"
+)
+
+//Генерация уникального ID для БД
+func GenerateUniqueID()(string,error){
+	godotenv.Load()
+	alphabet := os.Getenv("ALPHABET_GEN")
+	length := os.Getenv("LENGTH_GEN")
+	if alphabet == ""{
+		alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+	}
+	if length == ""{
+		length = "10"
+	}
+	l,err := strconv.Atoi(length)
+	if err != nil{
+		log.Print(err)
+		return "",errors.New("failer convert str to int")
+	}
+	shortUrl,err := gonanoid.Generate(alphabet,l)
+	if err != nil{
+		log.Print(err)
+		return "",errors.New("failer to create short link")
+	}
+	return shortUrl,nil
+}
+FROM golang:1.24-alpine AS builder
+
+WORKDIR /app
+
+COPY go.mod go.sum .
+
+RUN go mod download
+
+COPY . . 
+
+RUN go build -o backend ./cmd/app
+
+FROM alpine:latest
+
+WORKDIR /root
+
+COPY --from=builder /app/backend .
+
+COPY --from=builder /app/internal/migrations ./migrations
+
+CMD ["./backend"]
+
+services:
+    backend:
+        image: yaharuott/url_shortener 
+        build: .
+        environment:
+          - SERVICE_PORT=8080
+          - LENGTH_GEN=8
+          - DB_NAME=link_shortener
+          - DB_PORT=3306
+          - DB_HOST=database
+          - DB_PASS=1212!!AaLXX
+          - DB_USER=root
+        ports:
+          - 8080:8080
+        depends_on: 
+          - database
+        restart: on-failure
+    database:
+        image: mysql:8.4
+        environment:
+          - MYSQL_ROOT_PASSWORD=1212!!AaLXX
+          - MYSQL_DATABASE=link_shortener
+## URL Shortener in Go + Gin + MySQL + NanoID + Goose
+A simple service for linking to links written in
+Gin, a MySql database, and a library for creating IDs for short links - nanoid
+
+## Features
+- Accepts short URLs and direct URL codes.
+- Store matching URLs in the database.
+- All responses in JSON format
+- Redirect short links to the original.
+- Clean architecture + DDD
+
+## How it works
+1. Upon entry, the original link in JSON format is accepted.
+Example: {"url":"www.youtube.com"}
+2. The database stores the values ​​of short links and original links.
+3. To go to the original site, go to the video at http://localhost:8080/generated id
+
+## Launch
+1. Clone the repository
+```
+git clone https://github.com/SH1roV12/urlshortener.git
+
+```
+2.
+```
+docker compose --build
+```
+
+The server will start at http://localhost:8080
+
+You can optionally change the server parameters by changing the environment variables in docker-compose.yaml:
+```
+SERVICE_PORT=8080 - the server port
+LENGTH_GEN=8 - generate short link lengths (id)
+ALPHABET_GEN=(for example)ABCDabcd1234 - the alphabet that the id will consist of (it is not recommended to use special characters such as !?$, etc.)
+DB_NAME=link_shortener - the database name (must match the name in the MYSQL_DATABASE variable)
+DB_PORT=3306 - The default MySQL port is 3306
+DB_HOST=database - The database host; in the case of Docker Compose, the service (database) name
+DB_PASS=1212!!AaLXX - The database password (must match the password in the MYSQL_ROOT_PASSWORD variable)
+DB_USER=root - The username that will be used to connect
+```

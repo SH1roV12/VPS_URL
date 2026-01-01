@@ -8,6 +8,7 @@ import (
 	"urlshortener/internal/repo"
 	"urlshortener/internal/service"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
@@ -27,6 +28,8 @@ func StartApp(){
 	
 	
 	r:=gin.Default()
+	r.Use(cors.Default())
+	
 	api:=r.Group("api")
 	//Ручка создания ссылки
 	api.POST("/create",func(c *gin.Context){
