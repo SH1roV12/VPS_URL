@@ -1,10 +1,9 @@
 package entity
 
 import (
+	"errors"
 	"fmt"
-	"net/url"
 	"strings"
-	errmsg "urlshortener/internal/errMsg"
 )
 
 
@@ -17,8 +16,8 @@ type Link struct{
 
 
 func NewLink(short_url,original_url string)(*Link, error){
-	if !checkURL(original_url){
-		return nil,errmsg.ErrWrongURL
+	if checkURL(original_url) == false{
+		return nil,errors.New(original_url)
 	}
 	return &Link{
 		OriginalURL: normalizeURL(original_url),
@@ -35,6 +34,5 @@ func normalizeURL(original_link string)string{
 }
 
 func checkURL(original_link string)bool{
-	u,err := url.ParseRequestURI(original_link)
-	return u.Host != "" && err == nil
+	return original_link != ""
 }

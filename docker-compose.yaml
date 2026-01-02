@@ -3,9 +3,26 @@ services:
       image: jwilder/nginx-proxy
       ports:
         - 80:80
+        - 443:443
       volumes: 
         - /var/run/docker.sock:/tmp/docker.sock:ro
-
+        - certs:/etc/nginx/certs:ro
+        - vhost:/etc/nginx/vhost.d:rw
+        - html:/usr/share/nginx/html:rw
+      labels: 
+        - "com.github.jrcs.letsencrypt_nginx_proxy_companion.nginx_proxy"
+    acme:
+        image: nginxproxy/acme-companion
+        container_name: nginx-proxy-acme
+        volumes:
+          - /var/run/docker.sock:/var/run/docker.sock:ro
+          - certs:/etc/nginx/certs:rw
+          - vhost:/etc/nginx/vhost.d:rw
+          - html:/usr/share/nginx/html:rw
+        environment:
+          - DEFAULT_EMAIL=your-email@example.com 
+        depends_on:
+          - proxy
     frontend:
         image: yaharuott/url_shortener_test_frontend
         build: 
@@ -13,6 +30,8 @@ services:
           dockerfile: Dockerfile
         environment:
           - VIRTUAL_HOST=yaharuott.ru
+          - LETSENCRYPT_HOST=yaharuott.ru
+          - LETSENCRYPT_EMAIL=your-bebra120310@gmail.com 
         depends_on:
           - backend
     backend:
@@ -26,8 +45,10 @@ services:
           - DB_NAME=link_shortener
           - DB_PORT=3306
           - DB_HOST=database
-          - VIRTUAL_HOST=api.yaharuott.ru
           - VIRTUAL_PORT=8080
+          - VIRTUAL_HOST=api.yaharuott.ru
+          - LETSENCRYPT_HOST=api.yaharuott.ru
+          - LETSENCRYPT_EMAIL=your-bebra120310@gmail.com 
         depends_on: 
           - database
         restart: on-failure
@@ -35,3 +56,8 @@ services:
         image: mysql:8.4
         env_file:
           - path: ./.env
+
+volumes:
+  certs:
+  vhost:
+  html:
