@@ -20,9 +20,10 @@ type LinkService struct{
 	generator tools.Generator
 }
 
-func NewLinkService(repo repo.Repository)*LinkService{
+func NewLinkService(repo repo.Repository, generator tools.Generator)*LinkService{
 	return &LinkService{
 		repo: repo,
+		generator: generator,
 	}
 }
 

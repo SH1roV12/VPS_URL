@@ -7,6 +7,7 @@ import (
 	"urlshortener/internal/handlers"
 	"urlshortener/internal/repo"
 	"urlshortener/internal/service"
+	"urlshortener/internal/tools"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -22,7 +23,8 @@ func StartApp(){
 	config := config.LoadConfig()
 	db:=db.InitDB(config.DatabaseConfig.DSN())
 	repo:=repo.NewLinkRepository(db.DB)
-	service:=service.NewLinkService(repo)
+	generator := tools.NanoGenerator{}
+	service:=service.NewLinkService(repo, &generator)
 	handlers:=handlers.NewLinkHandlers(service)
 	
 	

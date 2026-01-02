@@ -14,8 +14,10 @@ type Generator interface{
 	GenerateUniqueID()(string,error)
 }
 
+type NanoGenerator struct{}
+
 //Генерация уникального ID для БД
-func GenerateUniqueID()(string,error){
+func(n *NanoGenerator) GenerateUniqueID()(string,error){
 	alphabet := os.Getenv("ALPHABET_GEN")
 	length := os.Getenv("LENGTH_GEN")
 	host := os.Getenv("VIRTUAL_HOST")
