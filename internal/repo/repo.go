@@ -18,9 +18,9 @@ type Repository interface{
 }
 
 type Link struct{
-	ID int `gorm:"primaryKey;autoIncrement"`
-	Original_url string `gorm:"not null"`
-	Short_url string `gorm:"unique;not null"`
+	ID int `gorm:"primaryKey;autoIncrement;column:id"`
+	Original_url string `gorm:"not null;column:original_url"`
+	Short_url string `gorm:"unique;not null;column:short_url"`
 }
 
 type LinkRepository struct{

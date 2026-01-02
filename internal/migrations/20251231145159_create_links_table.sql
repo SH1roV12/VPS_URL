@@ -1,9 +1,9 @@
 -- +goose Up
 -- +goose StatementBegin
 CREATE TABLE links(
-    ID int AUTO_INCREMENT PRIMARY KEY,
-    OriginalURL text not null,
-    ShortURL VARCHAR(255) not null UNIQUE
+    id int AUTO_INCREMENT PRIMARY KEY,
+    original_url text not null,
+    short_url VARCHAR(255) not null UNIQUE
 );
 -- +goose StatementEnd
 
