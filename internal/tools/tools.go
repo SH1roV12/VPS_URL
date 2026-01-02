@@ -1,20 +1,24 @@
 package tools
 
 import (
-	"errors"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
+	errmsg "urlshortener/internal/errMsg"
 
-	"github.com/joho/godotenv"
 	gonanoid "github.com/matoous/go-nanoid/v2"
 )
 
+type Generator interface{
+	GenerateUniqueID()(string,error)
+}
+
 //Генерация уникального ID для БД
 func GenerateUniqueID()(string,error){
-	godotenv.Load()
 	alphabet := os.Getenv("ALPHABET_GEN")
 	length := os.Getenv("LENGTH_GEN")
+	host := os.Getenv("VIRTUAL_HOST")
 	if alphabet == ""{
 		alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 	}
@@ -24,12 +28,12 @@ func GenerateUniqueID()(string,error){
 	l,err := strconv.Atoi(length)
 	if err != nil{
 		log.Print(err)
-		return "",errors.New("failer convert str to int")
+		return "",errmsg.ErrFailedConvertStr
 	}
 	shortUrl,err := gonanoid.Generate(alphabet,l)
 	if err != nil{
 		log.Print(err)
-		return "",errors.New("failer to create short link")
+		return "",errmsg.ErrFailedCreateShort
 	}
-	return shortUrl,nil
+	return fmt.Sprintf("https://%s/%s",host,shortUrl),nil
 }

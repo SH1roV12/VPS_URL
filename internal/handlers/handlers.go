@@ -58,7 +58,6 @@ func(h *LinkHandlers) RedirectFromShortURL(c *gin.Context){
         c.JSON(http.StatusNotFound, gin.H{"error": "Link not found"})
         return
     }
-	originalURL = "https://" + originalURL
 	//Редирект на оригинальную ссылку
 	c.Redirect(http.StatusFound,originalURL)
 }

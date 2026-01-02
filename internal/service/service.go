@@ -17,6 +17,7 @@ type Service interface{
 
 type LinkService struct{
 	repo repo.Repository
+	generator tools.Generator
 }
 
 func NewLinkService(repo repo.Repository)*LinkService{
@@ -26,11 +27,14 @@ func NewLinkService(repo repo.Repository)*LinkService{
 }
 
 func (s *LinkService) NewLink(ctx context.Context,dto *dto.NewLink)(string,string,error){
-	shortUrl,err := tools.GenerateUniqueID()
+	shortUrl,err := s.generator.GenerateUniqueID()
 	if err != nil{
 		return "","",err
 	}
-	newLink := entity.NewLink(shortUrl,dto.OriginalURL)
+	newLink,err := entity.NewLink(shortUrl,dto.OriginalURL)
+	if err != nil{
+		return "","",err
+	}
 	err = s.repo.Create(ctx,newLink)
 	if err != nil{
 		return "","",err
